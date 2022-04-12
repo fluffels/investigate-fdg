@@ -1,0 +1,7 @@
+[
+    {
+        "directory": "C:\\Users\\jcwkr\\source\\repos\\investigate-fdg",
+        "command": "C:\\Program Files\\LLVM\\bin\\clang.exe -std=gnu++20 -I.\\lib\\jcwk -I.\\lib -IC:\\VulkanSDK\\1.2.176.1\\Include",
+        "file": "src/MainWin32.cpp"
+    }
+]

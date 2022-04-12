@@ -7,6 +7,3 @@
 [submodule "lib/jcwk"]
 	path = lib/jcwk
 	url = https://github.com/fluffels/jcwk.git
-[submodule "lib/easyloggingpp"]
-	path = lib/easyloggingpp
-	url = https://github.com/amrayn/easyloggingpp.git

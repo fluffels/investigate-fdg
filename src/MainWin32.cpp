@@ -668,21 +668,21 @@ void load_sociogram() {
     f32 y = startY;
 
     // 620
-    int node_count = powl(10, 2);
+    int node_count = powl(10, 7);
     for (int i = 0; i < node_count; i++) {
-        // if (x > sociogram_max.x) {
-        //     x = startX;
-        //     y += 5.f;
-        // }
+        if (x > sociogram_max.x) {
+            x = startX;
+            y += 5.f;
+        }
 
-        // nodes.push_back({ x, y });
+        nodes.push_back({ x, y });
 
-        // x += 5.f;
+        x += 5.f;
 
-        nodes.push_back({
-            .x = static_cast<f32>(rand() % rangeX + startX),
-            .y = static_cast<f32>(rand() % rangeY + startY)
-        });
+        // nodes.push_back({
+        //     .x = static_cast<f32>(rand() % rangeX + startX),
+        //     .y = static_cast<f32>(rand() % rangeY + startY)
+        // });
     }
 }
 

@@ -54,6 +54,7 @@ struct Input {
 struct Uniforms {
     float proj[16];
     float ortho[16];
+    float orthoSociogram[16];
     Vec4 eye;
     Vec4 rotation;
 };
@@ -147,8 +148,17 @@ PipelineInfo pipelineInfo[] = {
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
     },
     {
-        .name = "lines",
-        .vertexShaderPath = "shaders/ortho_xy_rgba.vert.spv",
+        .name = "boxes_sociogram",
+        .vertexShaderPath = "shaders/ortho_sociogram_xy_uv_rgba.vert.spv",
+        .fragmentShaderPath = "shaders/rgba.frag.spv",
+        .clockwiseWinding = true,
+        .cullBackFaces = false,
+        .depthEnabled = false,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    },
+    {
+        .name = "lines_sociogram",
+        .vertexShaderPath = "shaders/ortho_sociogram_xy_rgba.vert.spv",
         .fragmentShaderPath = "shaders/lines.frag.spv",
         .depthEnabled = false,
         .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
@@ -169,11 +179,6 @@ struct Brush {
 
 BrushInfo brushInfo[] = {
     {
-        .name = "boxes",
-        .meshName = "boxes",
-        .pipelineName = "boxes"
-    },
-    {
         .name = "text",
         .meshName = "text",
         .pipelineName = "text",
@@ -191,9 +196,14 @@ BrushInfo brushInfo[] = {
         .pipelineName = "boxes"
     },
     {
+        .name = "boxes",
+        .meshName = "boxes",
+        .pipelineName = "boxes_sociogram"
+    },
+    {
         .name = "lines",
         .meshName = "lines",
-        .pipelineName = "lines",
+        .pipelineName = "lines_sociogram",
     },
 };
 
@@ -521,6 +531,161 @@ packFont(Font& font) {
     font.isDirty = false;
 }
 
+// *******************************
+// * SOCIOGRAM: Sociogram stuff. *
+// *******************************
+
+/**
+ * box - ordered box
+ */
+static inline
+bool
+intersect_box_point(struct AABox box, struct Vec2 point) {
+    const bool result = ((point.x >= box.x0) && (point.x <= box.x1) && (point.y >= box.y0) && (point.y <= box.y1));
+    // INFO("(%f %f) => (x: %f -> %f, y: %f -> %f): %d", point.x, point.y, box.x0, box.x1, box.y0, box.y1, result);
+    return result;
+}
+
+struct quad_node {
+    struct quad_node* tl;
+    struct quad_node* tr;
+    struct quad_node* bl;
+    struct quad_node* br;
+
+    struct AABox bbox;
+    struct Vec2 center;
+    u32 count;
+};
+
+const struct Vec2 sociogram_min = { -500.f, -500.f };
+const struct Vec2 sociogram_max = {  500.f,  500.f };
+
+vector<Vec2> nodes;
+
+void quad_tree_split(struct quad_node* root, MemoryArena* mem) {
+    const f32 left  = root->bbox.x0;
+    const f32 right = root->bbox.x1;
+    const f32 x_mid = (left + right) / 2.f;
+
+    const f32 top    = root->bbox.y0;
+    const f32 bottom = root->bbox.y1;
+    const f32 y_mid  = (top + bottom) / 2.f;
+
+    struct AABox tl_box = { .x0 = left , .x1 = x_mid, .y0 = top  , .y1 = y_mid  };
+    struct AABox tr_box = { .x0 = x_mid, .x1 = right, .y0 = top  , .y1 = y_mid  };
+    struct AABox bl_box = { .x0 = left , .x1 = x_mid, .y0 = y_mid, .y1 = bottom };
+    struct AABox br_box = { .x0 = x_mid, .x1 = right, .y0 = y_mid, .y1 = bottom };
+
+    root->tl = memoryArenaAllocateStruct(mem, struct quad_node);
+    root->tl->bbox = tl_box;
+
+    root->tr = memoryArenaAllocateStruct(mem, struct quad_node);
+    root->tr->bbox = tr_box;
+
+    root->bl = memoryArenaAllocateStruct(mem, struct quad_node);
+    root->bl->bbox = bl_box;
+
+    root->br = memoryArenaAllocateStruct(mem, struct quad_node);
+    root->br->bbox = br_box;
+}
+
+void quad_tree_insert(struct quad_node* root, struct Vec2 node, MemoryArena* mem) {
+    if (root->tl || root->tr || root->bl || root->br) {
+        // NOTE(jan): This is an internal node.
+        if (intersect_box_point(root->tl->bbox, node)) {
+            quad_tree_insert(root->tl, node, mem);
+        } else if (intersect_box_point(root->tr->bbox, node)) {
+            quad_tree_insert(root->tr, node, mem);
+        } else if (intersect_box_point(root->bl->bbox, node)) {
+            quad_tree_insert(root->bl, node, mem);
+        } else {
+            quad_tree_insert(root->br, node, mem);
+        }
+    } else {
+        // NOTE(jan): This is a leaf node.
+        if (root->count == 0) {
+            // NOTE(jan): Leaf node has space.
+            root->count = 1;
+            root->center = node;
+        } else {
+            // NOTE(jan): Leaf node needs to be subdivided.
+            quad_tree_split(root, mem);
+            quad_tree_insert(root, root->center, mem);
+            quad_tree_insert(root, node, mem);
+        }
+    }
+}
+
+struct quad_node*
+quad_tree_build(MemoryArena* mem) {
+    struct quad_node* root = memoryArenaAllocateStruct(mem, struct quad_node);
+    if (nodes.size() < 1) return root;
+
+    root->bbox.x0 = nodes[0].x;
+    root->bbox.x1 = nodes[0].x;
+    root->bbox.y0 = nodes[0].y;
+    root->bbox.y1 = nodes[0].y;
+
+    for (const Vec2& node: nodes) {
+        root->bbox.x0 = min(root->bbox.x0, node.x);
+        root->bbox.x1 = max(root->bbox.x1, node.x);
+        root->bbox.y0 = min(root->bbox.y0, node.y);
+        root->bbox.y1 = max(root->bbox.y1, node.y);
+    }
+
+    for (const Vec2& node: nodes) {
+        quad_tree_insert(root, node, mem);
+    }
+
+    return root;
+}
+
+void quad_tree_draw(Renderer& renderer, struct quad_node* root) {
+    RENDERER_GET(lines, meshes, "lines");
+
+    Vec2 topLeft     = { root->bbox.x0, root->bbox.y0 };
+    Vec2 topRight    = { root->bbox.x1, root->bbox.y0 };
+    Vec2 bottomLeft  = { root->bbox.x0, root->bbox.y1 };
+    Vec2 bottomRight = { root->bbox.x1, root->bbox.y1 };
+    pushLine(lines, topLeft, topRight, base00);
+    pushLine(lines, topRight, bottomRight, base00);
+    pushLine(lines, bottomRight, bottomLeft, base00);
+    pushLine(lines, bottomLeft, topLeft, base00);
+
+    if (root->tl) quad_tree_draw(renderer, root->tl);
+    if (root->tr) quad_tree_draw(renderer, root->tr);
+    if (root->bl) quad_tree_draw(renderer, root->bl);
+    if (root->br) quad_tree_draw(renderer, root->br);
+}
+
+void load_sociogram() {
+    s32 rangeX = sociogram_max.x - sociogram_min.x;
+    s32 rangeY = sociogram_max.y - sociogram_min.y;
+    s32 startX = sociogram_min.x;
+    s32 startY = sociogram_min.y;
+
+    f32 x = startX;
+    f32 y = startY;
+
+    // 620
+    int node_count = powl(10, 2);
+    for (int i = 0; i < node_count; i++) {
+        // if (x > sociogram_max.x) {
+        //     x = startX;
+        //     y += 5.f;
+        // }
+
+        // nodes.push_back({ x, y });
+
+        // x += 5.f;
+
+        nodes.push_back({
+            .x = static_cast<f32>(rand() % rangeX + startX),
+            .y = static_cast<f32>(rand() % rangeY + startY)
+        });
+    }
+}
+
 // ***************************
 // * FRAME: Drawing a frame. *
 // ***************************
@@ -551,8 +716,8 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
     // NOTE(jan): Calculate uniforms (projection matrix &c).
     Uniforms uniforms;
 
-    matrixInit(uniforms.ortho);
     matrixOrtho(windowWidth, windowHeight, uniforms.ortho);
+    matrixOrthoCenteredOrigin(windowWidth, windowHeight, uniforms.orthoSociogram);
 
     updateUniforms(vk, &uniforms, sizeof(Uniforms));
 
@@ -572,6 +737,39 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
     RENDERER_GET(font, fonts, "default");
 
     std::vector<VulkanMesh> meshesToFree;
+
+    // NOTE(jan): Sociogram
+    {
+        for (const Vec2& node: nodes) {
+            AABox box = {
+                .x0 = node.x - 1.f,
+                .x1 = node.x + 1.f,
+                .y0 = node.y - 1.f,
+                .y1 = node.y + 1.f
+            };
+            pushAABox(boxes, box, magenta);
+        }
+
+        f32 start = getElapsed();
+        struct quad_node* root = quad_tree_build(&frameArena);
+        f32 end = getElapsed();
+
+        INFO("%.3fms", (end - start) * 1000);
+
+        const f32 used = getMemoryArenaUsed(&frameArena);
+        const f32 kb_used = used / 1024.f;
+        const f32 mb_used = kb_used / 1024.f;
+
+        const f32 free = getMemoryArenaFree(&frameArena);
+        const f32 kb_free = free / 1024.f;
+        const f32 mb_free = kb_free / 1024.f;
+
+        const f32 kb_size = frameArena.size / 1024.f;
+        const f32 mb_size = kb_size              / 1024.f;
+        INFO("%f MiB used of %f MiB (%f MiB free)", mb_used, mb_size, mb_free);
+
+        quad_tree_draw(renderer, root);
+    }
 
     if (input.consoleToggle) {
         console.show = !console.show;
@@ -942,6 +1140,9 @@ WinMain(
     // Load shaders, meshes, fonts, textures, and other resources.
     Renderer renderer;
     init(vk, renderer);
+
+    // Load data.
+    load_sociogram();
 
     // NOTE(jan): Main loop.
     bool done = false;

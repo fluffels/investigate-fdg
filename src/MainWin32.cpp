@@ -28,14 +28,6 @@ using std::set;
 const int WIDTH = 800;
 const int HEIGHT = 800;
 
-// ************************************************************
-// * MATH: Definitions for geometric mathematical primitives. *
-// ************************************************************
-
-inline int max(int a, int b) {
-    return (a > b) ? (a) : (b);
-}
-
 // ******
 // * UI *
 // ******
@@ -45,6 +37,7 @@ struct Input {
     bool consolePageUp;
     bool consoleNewLine;
     bool consoleToggle;
+    string cmd;
 };
 
 // ******************************************************************************************
@@ -559,6 +552,8 @@ struct quad_node {
 const struct Vec2 sociogram_min = { -500.f, -500.f };
 const struct Vec2 sociogram_max = {  500.f,  500.f };
 
+bool print_stats = false;
+
 vector<Vec2> nodes;
 
 // void quad_tree_split(struct quad_node* root, MemoryArena* mem) {
@@ -606,6 +601,11 @@ void quad_tree_split(AABox bbox, AABox& tl, AABox& tr, AABox& bl, AABox& br) {
 void quad_tree_insert(struct quad_node* root, struct Vec2 node, AABox bbox, MemoryArena* mem) {
     bool hasSpace = root->count == 0;
     bool isLeaf = !(root->tl || root->tr || root->bl || root->br);
+
+    while (isLeaf && (node.x == root->center.x) && (node.y == root->center.y)) {
+        node.x += ((f32)rand() / RAND_MAX) * 1.f;
+        node.y += ((f32)rand() / RAND_MAX) * 1.f;
+    }
     
     // NOTE(jan): Leaf node with space.
     if (hasSpace && isLeaf) {
@@ -679,22 +679,52 @@ void load_sociogram() {
     f32 y = startY;
 
     // 620
-    int node_count = powl(10, 7);
-    for (int i = 0; i < node_count; i++) {
-        if (x > sociogram_max.x) {
-            x = startX;
-            y += 5.f;
-        }
+    u64 node_count = powl(10, 1);
+    for (u64 i = 0; i < node_count; i++) {
+        // if (x > sociogram_max.x) {
+        //     x = startX;
+        //     y += 5.f;
+        // }
 
-        nodes.push_back({ x, y });
+        // nodes.push_back({ x, y });
 
-        x += 5.f;
+        // x += 5.f;
 
-        // nodes.push_back({
-        //     .x = static_cast<f32>(rand() % rangeX + startX),
-        //     .y = static_cast<f32>(rand() % rangeY + startY)
-        // });
+        struct Vec2 node = {
+            .x = ((f32)rand() / RAND_MAX) * rangeX + startX,
+            .y = ((f32)rand() / RAND_MAX) * rangeY + startY
+        };
+        INFO("node %d = (%f %f)", i, node.x, node.y);
+        nodes.push_back(node);
     }
+}
+
+void node_insert_random(umm count) {
+    s32 rangeX = count;
+    s32 rangeY = count;
+    s32 startX = count / -2.f;
+    s32 startY = count / -2.f;
+
+    for (umm i = 0; i < count; i++) {
+        struct Vec2 node = {
+            .x = ((f32)rand() / RAND_MAX) * rangeX + startX,
+            .y = ((f32)rand() / RAND_MAX) * rangeY + startY
+        };
+        nodes.push_back(node);
+    }
+
+    print_stats = true;
+
+    // for (umm i = 0; i < nodes.size(); i++) {
+    //     for (umm j = 0; j < nodes.size(); j++) {
+    //         if (i == j) continue;
+    //         struct Vec2 I = nodes[i];
+    //         struct Vec2 J = nodes[j];
+    //         if ((I.x == J.x) && (I.y == J.y)) {
+    //             INFO("equal");
+    //         }
+    //     }
+    // }
 }
 
 // ***************************
@@ -750,7 +780,7 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
     std::vector<VulkanMesh> meshesToFree;
 
     // NOTE(jan): Sociogram
-    {
+    if (nodes.size() > 0) {
         AABox bbox = {
             .x0 = nodes[0].x,
             .x1 = nodes[0].x,
@@ -759,39 +789,51 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
         };
 
         for (const Vec2& node: nodes) {
-            bbox.x0 = min(bbox.x0, node.x);
-            bbox.x1 = max(bbox.x1, node.x);
-            bbox.y0 = min(bbox.y0, node.y);
-            bbox.y1 = max(bbox.y1, node.y);
-
-            AABox box = {
-                .x0 = node.x - 1.f,
-                .x1 = node.x + 1.f,
-                .y0 = node.y - 1.f,
-                .y1 = node.y + 1.f
-            };
-            pushAABox(boxes, box, magenta);
+            bbox.x0 = fmin(bbox.x0, node.x);
+            bbox.x1 = fmax(bbox.x1, node.x);
+            bbox.y0 = fmin(bbox.y0, node.y);
+            bbox.y1 = fmax(bbox.y1, node.y);
         }
 
         f32 start = getElapsed();
         struct quad_node* root = quad_tree_build(bbox, &frameArena);
         f32 end = getElapsed();
 
-        INFO("%.3fms", (end - start) * 1000);
+        if (print_stats) {
 
-        const f32 used = getMemoryArenaUsed(&frameArena);
-        const f32 kb_used = used / 1024.f;
-        const f32 mb_used = kb_used / 1024.f;
+            const f32 used = getMemoryArenaUsed(&frameArena);
+            const f32 kb_used = used / 1024.f;
+            const f32 mb_used = kb_used / 1024.f;
 
-        const f32 free = getMemoryArenaFree(&frameArena);
-        const f32 kb_free = free / 1024.f;
-        const f32 mb_free = kb_free / 1024.f;
+            const f32 free = getMemoryArenaFree(&frameArena);
+            const f32 kb_free = free / 1024.f;
+            const f32 mb_free = kb_free / 1024.f;
 
-        const f32 kb_size = frameArena.size / 1024.f;
-        const f32 mb_size = kb_size              / 1024.f;
-        INFO("%f MiB used of %f MiB (%f MiB free)", mb_used, mb_size, mb_free);
+            const f32 kb_size = frameArena.size / 1024.f;
+            const f32 mb_size = kb_size         / 1024.f;
+            INFO("%d nodes, %.3fms, %f MiB used of %f MiB (%f MiB free)", nodes.size(), (end-start)*1000, mb_used, mb_size, mb_free);
 
-        quad_tree_draw(renderer, root, bbox);
+            print_stats = false;
+        }
+
+        if (nodes.size() <= 100000) {
+            quad_tree_draw(renderer, root, bbox);
+
+            for (const Vec2& node: nodes) {
+                bbox.x0 = fmin(bbox.x0, node.x);
+                bbox.x1 = fmax(bbox.x1, node.x);
+                bbox.y0 = fmin(bbox.y0, node.y);
+                bbox.y1 = fmax(bbox.y1, node.y);
+
+                AABox box = {
+                    .x0 = node.x - 2.f,
+                    .x1 = node.x + 2.f,
+                    .y0 = node.y - 2.f,
+                    .y1 = node.y + 2.f
+                };
+                pushAABox(boxes, box, magenta);
+            }
+        }
     }
 
     if (input.consoleToggle) {
@@ -799,7 +841,15 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
         input.consoleToggle = false;
     }
     if (input.consoleNewLine) {
-        logRaw("> ");
+        if (input.cmd[0] == 'I') {
+            string num = input.cmd.substr(1);
+            umm d = 0;
+            sscanf_s(num.c_str(), "%lu", &d);
+            node_insert_random(d);
+        }
+        string s = "> " + input.cmd;
+        logRaw(s.c_str());
+        input.cmd = "";
         input.consoleNewLine = false;
     }
 
@@ -830,7 +880,8 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
             .x1 = backgroundBox.x1,
             .y1 = backgroundBox.y1 - margin,
         };
-        AABox promptBox = pushText(text, font, consoleLineBox, stringLiteral("> "), base01);
+        string s = "> " + input.cmd;
+        AABox promptBox = pushText(text, font, consoleLineBox, stringLiteral(s.c_str()), base01);
 
         f32 cursorAlpha = (1 + sin(frameStart * 10.f)) / 2.f;
         AABox cursorBox = {};
@@ -1055,6 +1106,10 @@ WindowProc(
                 case VK_NEXT: input.consolePageDown = true; break;
                 case VK_RETURN: input.consoleNewLine = true; break;
                 case VK_F1: input.consoleToggle = true; break;
+                case 'I': if (!console.show) node_insert_random(1); break;
+            }
+            if (console.show) {
+                if ((wParam >= 32) && (wParam <= 126)) input.cmd += (char)wParam;
             }
             break;
         } case WM_KEYUP: {
@@ -1165,7 +1220,7 @@ WinMain(
     init(vk, renderer);
 
     // Load data.
-    load_sociogram();
+    // load_sociogram();
 
     // NOTE(jan): Main loop.
     bool done = false;

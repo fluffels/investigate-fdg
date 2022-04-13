@@ -552,7 +552,6 @@ struct quad_node {
     struct quad_node* bl;
     struct quad_node* br;
 
-    struct AABox bbox;
     struct Vec2 center;
     u32 count;
 };
@@ -562,100 +561,112 @@ const struct Vec2 sociogram_max = {  500.f,  500.f };
 
 vector<Vec2> nodes;
 
-void quad_tree_split(struct quad_node* root, MemoryArena* mem) {
-    const f32 left  = root->bbox.x0;
-    const f32 right = root->bbox.x1;
+// void quad_tree_split(struct quad_node* root, MemoryArena* mem) {
+//     const f32 left  = root->bbox.x0;
+//     const f32 right = root->bbox.x1;
+//     const f32 x_mid = (left + right) / 2.f;
+
+//     const f32 top    = root->bbox.y0;
+//     const f32 bottom = root->bbox.y1;
+//     const f32 y_mid  = (top + bottom) / 2.f;
+
+//     struct AABox tl_box = { .x0 = left , .x1 = x_mid, .y0 = top  , .y1 = y_mid  };
+//     struct AABox tr_box = { .x0 = x_mid, .x1 = right, .y0 = top  , .y1 = y_mid  };
+//     struct AABox bl_box = { .x0 = left , .x1 = x_mid, .y0 = y_mid, .y1 = bottom };
+//     struct AABox br_box = { .x0 = x_mid, .x1 = right, .y0 = y_mid, .y1 = bottom };
+
+//     root->tl = memoryArenaAllocateStruct(mem, struct quad_node);
+//     root->tl->bbox = tl_box;
+
+//     root->tr = memoryArenaAllocateStruct(mem, struct quad_node);
+//     root->tr->bbox = tr_box;
+
+//     root->bl = memoryArenaAllocateStruct(mem, struct quad_node);
+//     root->bl->bbox = bl_box;
+
+//     root->br = memoryArenaAllocateStruct(mem, struct quad_node);
+//     root->br->bbox = br_box;
+// }
+
+void quad_tree_split(AABox bbox, AABox& tl, AABox& tr, AABox& bl, AABox& br) {
+    const f32 left  = bbox.x0;
+    const f32 right = bbox.x1;
     const f32 x_mid = (left + right) / 2.f;
 
-    const f32 top    = root->bbox.y0;
-    const f32 bottom = root->bbox.y1;
+    const f32 top    = bbox.y0;
+    const f32 bottom = bbox.y1;
     const f32 y_mid  = (top + bottom) / 2.f;
 
-    struct AABox tl_box = { .x0 = left , .x1 = x_mid, .y0 = top  , .y1 = y_mid  };
-    struct AABox tr_box = { .x0 = x_mid, .x1 = right, .y0 = top  , .y1 = y_mid  };
-    struct AABox bl_box = { .x0 = left , .x1 = x_mid, .y0 = y_mid, .y1 = bottom };
-    struct AABox br_box = { .x0 = x_mid, .x1 = right, .y0 = y_mid, .y1 = bottom };
-
-    root->tl = memoryArenaAllocateStruct(mem, struct quad_node);
-    root->tl->bbox = tl_box;
-
-    root->tr = memoryArenaAllocateStruct(mem, struct quad_node);
-    root->tr->bbox = tr_box;
-
-    root->bl = memoryArenaAllocateStruct(mem, struct quad_node);
-    root->bl->bbox = bl_box;
-
-    root->br = memoryArenaAllocateStruct(mem, struct quad_node);
-    root->br->bbox = br_box;
+    tl = { .x0 = left , .x1 = x_mid, .y0 = top  , .y1 = y_mid  };
+    tr = { .x0 = x_mid, .x1 = right, .y0 = top  , .y1 = y_mid  };
+    bl = { .x0 = left , .x1 = x_mid, .y0 = y_mid, .y1 = bottom };
+    br = { .x0 = x_mid, .x1 = right, .y0 = y_mid, .y1 = bottom };
 }
 
-void quad_tree_insert(struct quad_node* root, struct Vec2 node, MemoryArena* mem) {
-    if (root->tl || root->tr || root->bl || root->br) {
-        // NOTE(jan): This is an internal node.
-        if (intersect_box_point(root->tl->bbox, node)) {
-            quad_tree_insert(root->tl, node, mem);
-        } else if (intersect_box_point(root->tr->bbox, node)) {
-            quad_tree_insert(root->tr, node, mem);
-        } else if (intersect_box_point(root->bl->bbox, node)) {
-            quad_tree_insert(root->bl, node, mem);
-        } else {
-            quad_tree_insert(root->br, node, mem);
-        }
-    } else {
-        // NOTE(jan): This is a leaf node.
-        if (root->count == 0) {
-            // NOTE(jan): Leaf node has space.
-            root->count = 1;
-            root->center = node;
-        } else {
-            // NOTE(jan): Leaf node needs to be subdivided.
-            quad_tree_split(root, mem);
-            quad_tree_insert(root, root->center, mem);
-            quad_tree_insert(root, node, mem);
-        }
+void quad_tree_insert(struct quad_node* root, struct Vec2 node, AABox bbox, MemoryArena* mem) {
+    bool hasSpace = root->count == 0;
+    bool isLeaf = !(root->tl || root->tr || root->bl || root->br);
+    
+    // NOTE(jan): Leaf node with space.
+    if (hasSpace && isLeaf) {
+        root->count = 1;
+        root->center = node;
+        return;
     }
+
+    struct AABox tl, tr, bl, br;
+    quad_tree_split(bbox, tl, tr, bl, br);
+
+    if (intersect_box_point(tl, node)) {
+        if (!root->tl) root->tl = memoryArenaAllocateStruct(mem, struct quad_node);
+        quad_tree_insert(root->tl, node, tl, mem);
+    } else if (intersect_box_point(tr, node)) {
+        if (!root->tr) root->tr = memoryArenaAllocateStruct(mem, struct quad_node);
+        quad_tree_insert(root->tr, node, tr, mem);
+    } else if (intersect_box_point(bl, node)) {
+        if (!root->bl) root->bl = memoryArenaAllocateStruct(mem, struct quad_node);
+        quad_tree_insert(root->bl, node, bl, mem);
+    } else {
+        if (!root->br) root->br = memoryArenaAllocateStruct(mem, struct quad_node);
+        quad_tree_insert(root->br, node, br, mem);
+    }
+
+    // NOTE(jan): If the node was a leaf, the previous occupant now needs to be moved down the hierarchy.
+    if (isLeaf)
+        quad_tree_insert(root, root->center, bbox, mem);
 }
 
 struct quad_node*
-quad_tree_build(MemoryArena* mem) {
+quad_tree_build(AABox bbox, MemoryArena* mem) {
     struct quad_node* root = memoryArenaAllocateStruct(mem, struct quad_node);
     if (nodes.size() < 1) return root;
 
-    root->bbox.x0 = nodes[0].x;
-    root->bbox.x1 = nodes[0].x;
-    root->bbox.y0 = nodes[0].y;
-    root->bbox.y1 = nodes[0].y;
-
     for (const Vec2& node: nodes) {
-        root->bbox.x0 = min(root->bbox.x0, node.x);
-        root->bbox.x1 = max(root->bbox.x1, node.x);
-        root->bbox.y0 = min(root->bbox.y0, node.y);
-        root->bbox.y1 = max(root->bbox.y1, node.y);
-    }
-
-    for (const Vec2& node: nodes) {
-        quad_tree_insert(root, node, mem);
+        quad_tree_insert(root, node, bbox, mem);
     }
 
     return root;
 }
 
-void quad_tree_draw(Renderer& renderer, struct quad_node* root) {
+void quad_tree_draw(Renderer& renderer, struct quad_node* root, struct AABox bbox) {
     RENDERER_GET(lines, meshes, "lines");
 
-    Vec2 topLeft     = { root->bbox.x0, root->bbox.y0 };
-    Vec2 topRight    = { root->bbox.x1, root->bbox.y0 };
-    Vec2 bottomLeft  = { root->bbox.x0, root->bbox.y1 };
-    Vec2 bottomRight = { root->bbox.x1, root->bbox.y1 };
+    Vec2 topLeft     = { bbox.x0, bbox.y0 };
+    Vec2 topRight    = { bbox.x1, bbox.y0 };
+    Vec2 bottomLeft  = { bbox.x0, bbox.y1 };
+    Vec2 bottomRight = { bbox.x1, bbox.y1 };
     pushLine(lines, topLeft, topRight, base00);
     pushLine(lines, topRight, bottomRight, base00);
     pushLine(lines, bottomRight, bottomLeft, base00);
     pushLine(lines, bottomLeft, topLeft, base00);
 
-    if (root->tl) quad_tree_draw(renderer, root->tl);
-    if (root->tr) quad_tree_draw(renderer, root->tr);
-    if (root->bl) quad_tree_draw(renderer, root->bl);
-    if (root->br) quad_tree_draw(renderer, root->br);
+    struct AABox tl, tr, bl, br;
+    quad_tree_split(bbox, tl, tr, bl, br);
+
+    if (root->tl) quad_tree_draw(renderer, root->tl, tl);
+    if (root->tr) quad_tree_draw(renderer, root->tr, tr);
+    if (root->bl) quad_tree_draw(renderer, root->bl, bl);
+    if (root->br) quad_tree_draw(renderer, root->br, br);
 }
 
 void load_sociogram() {
@@ -740,7 +751,19 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
 
     // NOTE(jan): Sociogram
     {
+        AABox bbox = {
+            .x0 = nodes[0].x,
+            .x1 = nodes[0].x,
+            .y0 = nodes[0].y,
+            .y1 = nodes[0].y
+        };
+
         for (const Vec2& node: nodes) {
+            bbox.x0 = min(bbox.x0, node.x);
+            bbox.x1 = max(bbox.x1, node.x);
+            bbox.y0 = min(bbox.y0, node.y);
+            bbox.y1 = max(bbox.y1, node.y);
+
             AABox box = {
                 .x0 = node.x - 1.f,
                 .x1 = node.x + 1.f,
@@ -751,7 +774,7 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
         }
 
         f32 start = getElapsed();
-        struct quad_node* root = quad_tree_build(&frameArena);
+        struct quad_node* root = quad_tree_build(bbox, &frameArena);
         f32 end = getElapsed();
 
         INFO("%.3fms", (end - start) * 1000);
@@ -768,7 +791,7 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
         const f32 mb_size = kb_size              / 1024.f;
         INFO("%f MiB used of %f MiB (%f MiB free)", mb_used, mb_size, mb_free);
 
-        quad_tree_draw(renderer, root);
+        quad_tree_draw(renderer, root, bbox);
     }
 
     if (input.consoleToggle) {

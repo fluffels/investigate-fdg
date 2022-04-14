@@ -814,6 +814,9 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
     matrixOrtho(windowWidth, windowHeight, uniforms.ortho);
     matrixOrthoCenteredOrigin(windowWidth, windowHeight, uniforms.orthoSociogram);
 
+    matrixInit(uniforms.proj);
+    matrix2DZoom(1.f, uniforms.proj);
+
     updateUniforms(vk, &uniforms, sizeof(Uniforms));
 
     // NOTE(jan): Meshes are cleared and recalculated each frame.

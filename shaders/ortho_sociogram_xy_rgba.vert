@@ -9,6 +9,6 @@ layout(location=2) in vec4 inRGBA;
 layout(location=1) out vec4 outRGBA;
 
 void main() {
-    gl_Position = uniforms.ortho_sociogram * vec4(inXY, 0.f, 1.f);
+    gl_Position = uniforms.proj * uniforms.ortho_sociogram * vec4(inXY, 0.f, 1.f);
     outRGBA = inRGBA;
 }

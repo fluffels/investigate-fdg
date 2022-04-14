@@ -701,14 +701,17 @@ quad_tree_update_node(struct quad_node* root, AABox box, struct Vec2 node) {
 
     Vec2 v = { 0.f, 0.f };
     vectorSub(root->center, node, v);
-    f32 d = v.x * v.x + v.y * v.y;
+    f32 s = box.x1 - box.x0;
+    f32 d = sqrtf(v.x * v.x + v.y * v.y);
     if (d == 0.f) return result;
+
+    float r = s/d;
 
     bool isLeaf = !(root->tl || root->tr || root->bl || root->br);
     bool isOutside = !intersect_box_point(box, node);
     
-    if (isLeaf || (isOutside && (d > 100.f))) {
-        d = -1.f / d;
+    if (isLeaf || (isOutside && (r < .5f))) {
+        d = -1.f / (d*d);
         d *= root->count;
 
         vectorScale(d, v);

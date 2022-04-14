@@ -37,6 +37,8 @@ struct Input {
     bool consolePageUp;
     bool consoleNewLine;
     bool consoleToggle;
+    bool zoomIn;
+    bool zoomOut;
     string cmd;
 };
 
@@ -781,6 +783,8 @@ void node_insert_random(umm count) {
     // }
 }
 
+f32 zoomFactor = 1.f;
+
 // ***************************
 // * FRAME: Drawing a frame. *
 // ***************************
@@ -808,6 +812,9 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
         FATAL("could not acquire next image")
     }
 
+    if (input.zoomIn) zoomFactor += 0.01f;
+    if (input.zoomOut) zoomFactor -= 0.01f;
+
     // NOTE(jan): Calculate uniforms (projection matrix &c).
     Uniforms uniforms;
 
@@ -815,7 +822,7 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
     matrixOrthoCenteredOrigin(windowWidth, windowHeight, uniforms.orthoSociogram);
 
     matrixInit(uniforms.proj);
-    matrix2DZoom(1.f, uniforms.proj);
+    matrix2DZoom(zoomFactor, uniforms.proj);
 
     updateUniforms(vk, &uniforms, sizeof(Uniforms));
 
@@ -1180,6 +1187,8 @@ WindowProc(
                 case VK_RETURN: input.consoleNewLine = true; break;
                 case VK_F1: input.consoleToggle = true; break;
                 case 'I': if (!console.show) node_insert_random(1); break;
+                case 'Z': if (!console.show) input.zoomIn = true; break;
+                case 'X': if (!console.show) input.zoomOut = true; break;
             }
             if (console.show) {
                 if ((wParam >= 32) && (wParam <= 126)) input.cmd += (char)wParam;
@@ -1190,6 +1199,8 @@ WindowProc(
                 case VK_F1: input.consoleToggle = false; break;
                 case VK_PRIOR: input.consolePageUp = false; break;
                 case VK_NEXT: input.consolePageDown = false; break;
+                case 'Z': if (!console.show) input.zoomIn = false; break;
+                case 'X': if (!console.show) input.zoomOut = false; break;
             }
             break;
         } default: {

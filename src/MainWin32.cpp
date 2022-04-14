@@ -694,6 +694,39 @@ quad_tree_build(AABox bbox, MemoryArena* mem) {
     return root;
 }
 
+struct Vec2
+quad_tree_update_node(struct quad_node* root, struct Vec2 node) {
+    Vec2 result = { 0.f, 0.f };
+
+    if (root == nullptr) return result;
+
+    bool isLeaf = !(root->tl || root->tr || root->bl || root->br);
+
+    Vec2 v = { 0.f, 0.f };
+    vectorSub(root->center, node, v);
+    f32 d = v.x * v.x + v.y * v.y;
+
+    if (d < 0.0000001f) {
+        result = { 0.f, 0.f };
+    } else if (isLeaf || (d > 1000.f)) {
+        d = -1.f / d;
+        d *= root->count;
+
+        vectorScale(d, v);
+        
+        result = v;
+    } else {
+        Vec2 tl = quad_tree_update_node(root->tl, node);
+        Vec2 tr = quad_tree_update_node(root->tl, node);
+        Vec2 bl = quad_tree_update_node(root->tl, node);
+        Vec2 br = quad_tree_update_node(root->tl, node);
+
+        result = { tl.x + tr.x + bl.x + br.x , tl.y + tr.y + bl.y + br.y };
+    }
+
+    return result;
+}
+
 void quad_tree_draw(Renderer& renderer, struct quad_node* root, struct AABox bbox) {
     RENDERER_GET(lines, meshes, "lines");
 
@@ -862,16 +895,7 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
         }
 
         for (Vec2& node: nodes) {
-            Vec2 v = { 0.f, 0.f };
-            vectorSub(root->center, node, v);
-
-            f32 d = v.x * v.x + v.y * v.y;
-            if (d < 0.0000001f) continue;
-
-            d = -0.1f / d;
-            d *= root->count;
-
-            vectorScale(d, v);
+            Vec2 v = quad_tree_update_node(root, node);
             vectorAdd(node, v, node);
         }
     }

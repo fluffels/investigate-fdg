@@ -695,20 +695,19 @@ quad_tree_build(AABox bbox, MemoryArena* mem) {
 }
 
 struct Vec2
-quad_tree_update_node(struct quad_node* root, struct Vec2 node) {
+quad_tree_update_node(struct quad_node* root, AABox box, struct Vec2 node) {
     Vec2 result = { 0.f, 0.f };
-
     if (root == nullptr) return result;
-
-    bool isLeaf = !(root->tl || root->tr || root->bl || root->br);
 
     Vec2 v = { 0.f, 0.f };
     vectorSub(root->center, node, v);
     f32 d = v.x * v.x + v.y * v.y;
+    if (d == 0.f) return result;
 
-    if (d < 0.0000001f) {
-        result = { 0.f, 0.f };
-    } else if (isLeaf || (d > 1000.f)) {
+    bool isLeaf = !(root->tl || root->tr || root->bl || root->br);
+    bool isOutside = !intersect_box_point(box, node);
+    
+    if (isLeaf || (isOutside && (d > 100.f))) {
         d = -1.f / d;
         d *= root->count;
 
@@ -716,12 +715,15 @@ quad_tree_update_node(struct quad_node* root, struct Vec2 node) {
         
         result = v;
     } else {
-        Vec2 tl = quad_tree_update_node(root->tl, node);
-        Vec2 tr = quad_tree_update_node(root->tl, node);
-        Vec2 bl = quad_tree_update_node(root->tl, node);
-        Vec2 br = quad_tree_update_node(root->tl, node);
+        AABox tl_box, tr_box, bl_box, br_box;
+        quad_tree_split(box, tl_box, tr_box, bl_box, br_box);
 
-        result = { tl.x + tr.x + bl.x + br.x , tl.y + tr.y + bl.y + br.y };
+        Vec2 tl_v = quad_tree_update_node(root->tl, tl_box, node);
+        Vec2 tr_v = quad_tree_update_node(root->tr, tr_box, node);
+        Vec2 bl_v = quad_tree_update_node(root->bl, bl_box, node);
+        Vec2 br_v = quad_tree_update_node(root->br, br_box, node);
+
+        result = { tl_v.x + tr_v.x + bl_v.x + br_v.x, tl_v.y + tr_v.y + bl_v.y + br_v.y };
     }
 
     return result;
@@ -888,15 +890,14 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
 
         const Vec2 center = { 0.f, 0.f };
         for (Vec2& node: nodes) {
-            Vec2 v = { 0.f, 0.f };
-            vectorSub(center, node, v);
-            vectorScale(0.01f, v);
-            vectorAdd(node, v, node);
-        }
+            Vec2 gravity = { 0.f, 0.f };
+            vectorSub(center, node, gravity);
+            vectorScale(0.01f, gravity);
 
-        for (Vec2& node: nodes) {
-            Vec2 v = quad_tree_update_node(root, node);
-            vectorAdd(node, v, node);
+            Vec2 repulsion = quad_tree_update_node(root, bbox, node);
+
+            vectorAdd(node, gravity, node);
+            vectorAdd(node, repulsion, node);
         }
     }
 

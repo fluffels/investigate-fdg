@@ -862,14 +862,17 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
         }
 
         for (Vec2& node: nodes) {
-            for (Vec2& other_node: nodes) {
-                if (&node == &other_node) continue;
-                Vec2 v = { 0.f, 0.f };
-                vectorSub(other_node, node, v);
-                f32 d = v.x * v.x + v.y * v.y;
-                vectorScale(-0.1f / d, v);
-                vectorAdd(node, v, node);
-            }
+            Vec2 v = { 0.f, 0.f };
+            vectorSub(root->center, node, v);
+
+            f32 d = v.x * v.x + v.y * v.y;
+            if (d < 0.0000001f) continue;
+
+            d = -0.1f / d;
+            d *= root->count;
+
+            vectorScale(d, v);
+            vectorAdd(node, v, node);
         }
     }
 

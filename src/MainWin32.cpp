@@ -636,6 +636,50 @@ void quad_tree_insert(struct quad_node* root, struct Vec2 node, AABox bbox, Memo
         quad_tree_insert(root, root->center, bbox, mem);
 }
 
+void
+quad_tree_update(struct quad_node* root) {
+    bool isLeaf = !(root->tl || root->tr || root->bl || root->br);
+    if (isLeaf) return;
+
+    if (root->tl) quad_tree_update(root->tl);
+    if (root->tr) quad_tree_update(root->tr);
+    if (root->bl) quad_tree_update(root->bl);
+    if (root->br) quad_tree_update(root->br);
+
+    root->count = (root->tl ? root->tl->count : 0) +
+        (root->tr ? root->tr->count : 0) +
+        (root->bl ? root->bl->count : 0) +
+        (root->br ? root->br->count : 0);
+    
+    root->center = { 0.f, 0.f };
+
+    if (root->tl) {
+        Vec2 tl = root->tl->center;
+        vectorScale(root->tl->count, tl);
+        vectorAdd(root->center, tl, root->center);
+    }
+
+    if (root->tr) {
+        Vec2 tr = root->tr->center;
+        vectorScale(root->tr->count, tr);
+        vectorAdd(root->center, tr, root->center);
+    }
+
+    if (root->bl) {
+        Vec2 bl = root->bl->center;
+        vectorScale(root->bl->count, bl);
+        vectorAdd(root->center, bl, root->center);
+    }
+
+    if (root->br) {
+        Vec2 br = root->br->center;
+        vectorScale(root->br->count, br);
+        vectorAdd(root->center, br, root->center);
+    }
+
+    vectorScale(1.f / root->count, root->center);
+}
+
 struct quad_node*
 quad_tree_build(AABox bbox, MemoryArena* mem) {
     struct quad_node* root = memoryArenaAllocateStruct(mem, struct quad_node);
@@ -644,6 +688,8 @@ quad_tree_build(AABox bbox, MemoryArena* mem) {
     for (const Vec2& node: nodes) {
         quad_tree_insert(root, node, bbox, mem);
     }
+
+    quad_tree_update(root);
 
     return root;
 }
@@ -669,41 +715,11 @@ void quad_tree_draw(Renderer& renderer, struct quad_node* root, struct AABox bbo
     if (root->br) quad_tree_draw(renderer, root->br, br);
 }
 
-void load_sociogram() {
-    s32 rangeX = sociogram_max.x - sociogram_min.x;
-    s32 rangeY = sociogram_max.y - sociogram_min.y;
-    s32 startX = sociogram_min.x;
-    s32 startY = sociogram_min.y;
-
-    f32 x = startX;
-    f32 y = startY;
-
-    // 620
-    u64 node_count = powl(10, 1);
-    for (u64 i = 0; i < node_count; i++) {
-        // if (x > sociogram_max.x) {
-        //     x = startX;
-        //     y += 5.f;
-        // }
-
-        // nodes.push_back({ x, y });
-
-        // x += 5.f;
-
-        struct Vec2 node = {
-            .x = ((f32)rand() / RAND_MAX) * rangeX + startX,
-            .y = ((f32)rand() / RAND_MAX) * rangeY + startY
-        };
-        INFO("node %d = (%f %f)", i, node.x, node.y);
-        nodes.push_back(node);
-    }
-}
-
 void node_insert_random(umm count) {
-    s32 rangeX = count;
-    s32 rangeY = count;
-    s32 startX = count / -2.f;
-    s32 startY = count / -2.f;
+    s32 rangeX = windowHeight;
+    s32 rangeY = windowHeight;
+    s32 startX = rangeX / -2.f;
+    s32 startY = rangeY / -2.f;
 
     for (umm i = 0; i < count; i++) {
         struct Vec2 node = {
@@ -800,6 +816,7 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
         f32 end = getElapsed();
 
         if (print_stats) {
+            INFO("%d nodes in tree, CoM is (%f %f)", root->count, root->center.x, root->center.y);
 
             const f32 used = getMemoryArenaUsed(&frameArena);
             const f32 kb_used = used / 1024.f;
@@ -816,6 +833,7 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
             print_stats = false;
         }
 
+        // NOTE(jan): Draw
         if (nodes.size() <= 100000) {
             quad_tree_draw(renderer, root, bbox);
 
@@ -834,6 +852,25 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
                 pushAABox(boxes, box, magenta);
             }
         }
+
+        const Vec2 center = { 0.f, 0.f };
+        for (Vec2& node: nodes) {
+            Vec2 v = { 0.f, 0.f };
+            vectorSub(center, node, v);
+            vectorScale(0.01f, v);
+            vectorAdd(node, v, node);
+        }
+
+        for (Vec2& node: nodes) {
+            for (Vec2& other_node: nodes) {
+                if (&node == &other_node) continue;
+                Vec2 v = { 0.f, 0.f };
+                vectorSub(other_node, node, v);
+                f32 d = v.x * v.x + v.y * v.y;
+                vectorScale(-0.1f / d, v);
+                vectorAdd(node, v, node);
+            }
+        }
     }
 
     if (input.consoleToggle) {
@@ -846,6 +883,8 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
             umm d = 0;
             sscanf_s(num.c_str(), "%lu", &d);
             node_insert_random(d);
+        } else if (input.cmd[0] == 'C') {
+            nodes.clear();
         }
         string s = "> " + input.cmd;
         logRaw(s.c_str());

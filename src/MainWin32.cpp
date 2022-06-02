@@ -1,5 +1,8 @@
+#include "MathLib.h"
 #include "Vulkan.h"
 #include "vulkan/vulkan_core.h"
+#include <stdio.h>
+#include <stdlib.h>
 #pragma warning (disable: 4267)
 #pragma warning (disable: 4996)
 
@@ -530,16 +533,10 @@ packFont(Font& font) {
 // * SOCIOGRAM: Sociogram stuff. *
 // *******************************
 
-/**
- * box - ordered box
- */
-static inline
-bool
-intersect_box_point(struct AABox box, struct Vec2 point) {
-    const bool result = ((point.x >= box.x0) && (point.x <= box.x1) && (point.y >= box.y0) && (point.y <= box.y1));
-    // INFO("(%f %f) => (x: %f -> %f, y: %f -> %f): %d", point.x, point.y, box.x0, box.x1, box.y0, box.y1, result);
-    return result;
-}
+struct edge {
+    umm from;
+    umm to;
+};
 
 struct quad_node {
     struct quad_node* tl;
@@ -551,12 +548,21 @@ struct quad_node {
     u32 count;
 };
 
-const struct Vec2 sociogram_min = { -500.f, -500.f };
-const struct Vec2 sociogram_max = {  500.f,  500.f };
-
 bool print_stats = false;
 
 vector<Vec2> nodes;
+vector<struct edge> edges;
+
+/**
+ * box - ordered box
+ */
+static inline
+bool
+intersect_box_point(struct AABox box, struct Vec2 point) {
+    const bool result = ((point.x >= box.x0) && (point.x <= box.x1) && (point.y >= box.y0) && (point.y <= box.y1));
+    // INFO("(%f %f) => (x: %f -> %f, y: %f -> %f): %d", point.x, point.y, box.x0, box.x1, box.y0, box.y1, result);
+    return result;
+}
 
 // void quad_tree_split(struct quad_node* root, MemoryArena* mem) {
 //     const f32 left  = root->bbox.x0;
@@ -899,6 +905,12 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
                 };
                 pushAABox(boxes, box, magenta);
             }
+
+            for (const edge& edge: edges) {
+                Vec2 from = nodes[edge.from];
+                Vec2 to = nodes[edge.to];
+                pushLine(lines, from, to, magenta);
+            }
         }
 
         const Vec2 center = { 0.f, 0.f };
@@ -911,6 +923,26 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
 
             vectorAdd(node, gravity, node);
             vectorAdd(node, repulsion, node);
+        }
+
+        for (edge& edge: edges) {
+            Vec2& from_node = nodes[edge.from];
+            Vec2& to_node = nodes[edge.to];
+
+            Vec2 v;
+            vectorSub(to_node, from_node, v);
+
+            f32 d = sqrtf(v.x*v.x + v.y*v.y);
+            // if (d > 50.f) {
+                Vec2 from_delta = v;
+                Vec2 to_delta = v;
+
+                vectorScale( 0.01f, from_delta);
+                vectorScale(-0.01f, to_delta);
+
+                vectorAdd(from_node, from_delta, from_node);
+                vectorAdd(to_node, to_delta, to_node);
+            // }
         }
     }
 
@@ -1191,7 +1223,12 @@ WindowProc(
                 case 'X': if (!console.show) input.zoomOut = true; break;
             }
             if (console.show) {
-                if ((wParam >= 32) && (wParam <= 126)) input.cmd += (char)wParam;
+                if (
+                    ((wParam >= 0x30) && (wParam <= 0x39)) ||
+                    ((wParam >= 0x41) && (wParam <= 0x5A))
+                ) {
+                    input.cmd += (char)wParam;
+                }
             }
             break;
         } case WM_KEYUP: {
@@ -1305,6 +1342,80 @@ WinMain(
 
     // Load data.
     // load_sociogram();
+    map<umm, umm> id_index_map;
+
+    {
+        FILE* sociogram_file = openFile("F:/links-anon.txt", "r");
+
+        const auto bufferSize = 100 * KIBIBYTE;
+        auto buffer = new char[bufferSize];
+        const auto readCount = readFromFile(sociogram_file, bufferSize, buffer);
+
+        char* bufferBegin = buffer;
+        char* bufferEnd = buffer + bufferSize;
+        char* fromStart = bufferBegin;
+        char* fromEnd = 0;
+        char* toStart = 0;
+        char* toEnd = 0;
+        u8 state = 0;
+        for (char* c = bufferBegin; c < bufferEnd; c++) {
+            if ((state == 0) && isdigit(*c)) {
+                state = 1;
+                fromStart = c;
+                fromEnd = c;
+            } else if (state == 1) {
+                if (isdigit(*c)) {
+                    fromEnd = c;
+                } else if (*c == ' ') {
+                    state = 2;
+                }
+            } else if ((state == 2) && isdigit(*c)) {
+                state = 3;
+                toStart = c;
+                toEnd = c;
+            } else if (state == 3) {
+                if (isdigit(*c)) {
+                    toEnd = c;
+                } else if (*c == '\n') {
+                    state = 0;
+
+                    u64 from_id = 0;
+                    u16 pow = 1;
+                    for (char* d = fromEnd; d >= fromStart; d--) {
+                        u8 digit = *d - 48;
+                        from_id += digit * pow;
+                        pow *= 10;
+                    }
+
+                    if (!id_index_map.contains(from_id)) {
+                        node_insert_random(1);
+                        id_index_map[from_id] = nodes.size() - 1;
+                    }
+
+                    u64 to_id = 0;
+                    pow = 1;
+                    for (char* d = toEnd; d >= toStart; d--) {
+                        u8 digit = *d - 48;
+                        to_id += digit * pow;
+                        pow *= 10;
+                    }
+
+                    if (!id_index_map.contains(to_id)) {
+                        node_insert_random(1);
+                        id_index_map[to_id] = nodes.size() - 1;
+                    }
+
+                    struct edge& edge = edges.emplace_back();
+                    edge.from = id_index_map[from_id];
+                    edge.to = id_index_map[to_id];
+                }
+            }
+        }
+    }
+
+    for (auto& edge: edges) {
+        INFO("%d -> %d", edge.from, edge.to);
+    }
 
     // NOTE(jan): Main loop.
     bool done = false;

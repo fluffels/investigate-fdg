@@ -31,6 +31,14 @@ using std::set;
 const int WIDTH = 800;
 const int HEIGHT = 800;
 
+static inline f32
+absf(f32 f) {
+	u32 u = *(u32*)(&f);
+	u32 absolute = u & 0x7FFFFFFF;
+	f32 result = *(f32*)(&absolute);
+	return result;
+}
+
 // ******
 // * UI *
 // ******
@@ -623,48 +631,70 @@ void quad_tree_split(AABox bbox, AABox& tl, AABox& tr, AABox& bl, AABox& br) {
     br = { .x0 = x_mid, .x1 = right, .y0 = y_mid, .y1 = bottom };
 }
 
-void quad_tree_insert(struct quad_node* root, struct Vec2 node, AABox bbox, MemoryArena* mem) {
-    bool hasSpace = root->count == 0;
-    bool isLeaf = !(root->tl || root->tr || root->bl || root->br);
+bool quad_tree_insert(struct quad_node* root,
+                      struct Vec2 node,
+                      u32 count,
+                      AABox bbox,
+                      MemoryArena* mem) {
+    bool empty = root->count == 0;
+    bool leaf = !(root->tl || root->tr || root->bl || root->br);
 
-    while (isLeaf && (node.x == root->center.x) && (node.y == root->center.y)) {
-        node.x += ((f32)rand() / RAND_MAX) * 1.f;
-        node.y += ((f32)rand() / RAND_MAX) * 1.f;
-    }
-    
-    // NOTE(jan): Leaf node with space.
-    if (hasSpace && isLeaf) {
-        root->count = 1;
-        root->center = node;
-        return;
+    if (leaf) {
+        if (empty) {
+            root->count = count;
+            root->center = node;
+            return true;
+        } else {
+			const f32 epsilon = 1.e-25f;
+			const f32 x_delta = absf(node.x - root->center.x);
+			const f32 y_delta = absf(node.y - root->center.y);
+			const bool x_epsilon = x_delta < epsilon;
+			const bool y_epsilon = y_delta < epsilon;
+
+			if (x_epsilon && y_epsilon) {
+				root->count += count;
+				return true;
+			}
+        }
     }
 
     struct AABox tl, tr, bl, br;
     quad_tree_split(bbox, tl, tr, bl, br);
 
     if (intersect_box_point(tl, node)) {
-        if (!root->tl) root->tl = memoryArenaAllocateStruct(mem, struct quad_node);
-        quad_tree_insert(root->tl, node, tl, mem);
+        if (!root->tl)
+            root->tl = memoryArenaAllocateStruct(mem, struct quad_node);
+        if (!quad_tree_insert(root->tl, node, count, tl, mem))
+            return false;
     } else if (intersect_box_point(tr, node)) {
-        if (!root->tr) root->tr = memoryArenaAllocateStruct(mem, struct quad_node);
-        quad_tree_insert(root->tr, node, tr, mem);
+        if (!root->tr)
+            root->tr = memoryArenaAllocateStruct(mem, struct quad_node);
+        if (!quad_tree_insert(root->tr, node, count, tr, mem))
+            return false;
     } else if (intersect_box_point(bl, node)) {
-        if (!root->bl) root->bl = memoryArenaAllocateStruct(mem, struct quad_node);
-        quad_tree_insert(root->bl, node, bl, mem);
+        if (!root->bl)
+            root->bl = memoryArenaAllocateStruct(mem, struct quad_node);
+        if (!quad_tree_insert(root->bl, node, count, bl, mem))
+            return false;
     } else {
-        if (!root->br) root->br = memoryArenaAllocateStruct(mem, struct quad_node);
-        quad_tree_insert(root->br, node, br, mem);
+        if (!root->br)
+            root->br = memoryArenaAllocateStruct(mem, struct quad_node);
+        if (!quad_tree_insert(root->br, node, count, br, mem))
+            return false;
     }
 
     // NOTE(jan): If the node was a leaf, the previous occupant now needs to be moved down the hierarchy.
-    if (isLeaf)
-        quad_tree_insert(root, root->center, bbox, mem);
+    if (leaf) {
+        return quad_tree_insert(root, root->center, count, bbox, mem);
+    } else {
+        return true;
+    }
 }
 
 void
 quad_tree_update(struct quad_node* root) {
-    bool isLeaf = !(root->tl || root->tr || root->bl || root->br);
-    if (isLeaf) return;
+    bool leaf = !(root->tl || root->tr || root->bl || root->br);
+    if (leaf) return;
 
     if (root->tl) quad_tree_update(root->tl);
     if (root->tr) quad_tree_update(root->tr);
@@ -711,7 +741,7 @@ quad_tree_build(AABox bbox, MemoryArena* mem) {
     if (nodes.size() < 1) return root;
 
     for (const Vec2& node: nodes) {
-        quad_tree_insert(root, node, bbox, mem);
+        quad_tree_insert(root, node, 1, bbox, mem);
     }
 
     quad_tree_update(root);
@@ -963,17 +993,14 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
             Vec2 v;
             vectorSub(to_node, from_node, v);
 
-            f32 d = sqrtf(v.x*v.x + v.y*v.y);
-            // if (d > 50.f) {
-                Vec2 from_delta = v;
-                Vec2 to_delta = v;
+            Vec2 from_delta = v;
+            Vec2 to_delta = v;
 
-                vectorScale( 0.01f, from_delta);
-                vectorScale(-0.01f, to_delta);
+            vectorScale( 0.01f, from_delta);
+            vectorScale(-0.01f, to_delta);
 
-                vectorAdd(from_node, from_delta, from_node);
-                vectorAdd(to_node, to_delta, to_node);
-            // }
+            vectorAdd(from_node, from_delta, from_node);
+            vectorAdd(to_node, to_delta, to_node);
         }
     }
 

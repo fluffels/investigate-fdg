@@ -116,6 +116,9 @@ MeshInfo meshInfo[] = {
         .name = "text",
     },
     {
+        .name = "hud_text",
+    },
+    {
         .name = "lines",
     },
     {
@@ -189,6 +192,18 @@ BrushInfo brushInfo[] = {
         },
     },
     {
+        .name = "hud_text",
+        .meshName = "hud_text",
+        .pipelineName = "text",
+        .uniforms = {
+            {
+                .name = "glyphs",
+                .resourceType = RESOURCE_TYPE_FONT,
+                .resourceName = "default"
+            },
+        },
+    },
+    {
         .name = "console",
         .meshName = "console",
         .pipelineName = "boxes"
@@ -236,6 +251,8 @@ Input input;
 RECT windowRect;
 f32 windowWidth;
 f32 windowHeight;
+
+u64 frameCount = 0;
 
 #define COLOUR_FROM_HEX(name, r, g, b) Vec4 name = { .x = r/255.f, .y = g/255.f, .z = b/255.f, .w = 1.f }
 
@@ -845,9 +862,23 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
     RENDERER_GET(consoleMesh, meshes, "console");
     RENDERER_GET(lines, meshes, "lines");
     RENDERER_GET(text, meshes, "text");
+    RENDERER_GET(hud_text, meshes, "hud_text");
     RENDERER_GET(font, fonts, "default");
 
     std::vector<VulkanMesh> meshesToFree;
+
+    // NOTE(jan): HUD
+    {
+        AABox hudBox = {
+            .x0 = 0,
+            .x1 = windowWidth,
+            .y1 = windowHeight,
+        };
+
+        char hud[1 * KIBIBYTE];
+        sprintf(hud, "%llu frames, %fs", frameCount, getElapsed());
+        hudBox = pushText(text, font, hudBox, stringLiteral(hud), base01);
+    }
 
     // NOTE(jan): Sociogram
     if (nodes.size() > 0) {
@@ -1075,6 +1106,7 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
     const char* brushOrder[] = {
         "boxes",
         "lines",
+        "hud_text",
         "console",
         "text",
     };
@@ -1145,6 +1177,8 @@ void doFrame(Vulkan& vk, Renderer& renderer) {
     if (font.isDirty) packFont(font);
 
     memoryArenaClear(&frameArena);
+
+    frameCount++;
 }
 
 // ************************************************************
@@ -1257,7 +1291,6 @@ WinMain(
     auto error = fopen_s(&logFile, "LOG", "w");
     if (error) exit(-1);
     console = initConsole(1 * 1024 * 1024);
-    console.show = true;
 
     QueryPerformanceCounter(&counterEpoch);
     QueryPerformanceFrequency(&counterFrequency);
@@ -1347,7 +1380,7 @@ WinMain(
     {
         FILE* sociogram_file = openFile("F:/links-anon.txt", "r");
 
-        const auto bufferSize = 100 * KIBIBYTE;
+        const auto bufferSize = 50 * KIBIBYTE;
         auto buffer = new char[bufferSize];
         const auto readCount = readFromFile(sociogram_file, bufferSize, buffer);
 

@@ -11,7 +11,5 @@ It simulates Twitter follow data (nodes, edges) and applies a physical simulatio
 
 ## Demo
 
-<video src="demo/1.webm" controls width="320"></video>
-<video src="demo/2.webm" controls width="320"></video>
-<video src="demo/3.webm" controls width="320"></video>
-<video src="demo/4.webm" controls width="320"></video>
+https://github.com/user-attachments/assets/4ec1b0cb-7128-447b-9caa-fe4a14903308
+

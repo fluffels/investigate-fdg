@@ -1,7 +1,7 @@
 # Force-Directed Graph Rendering Investigation
 
 This project showcases a force-directed graph layout rendered in real-time using Vulkan.
-It simulates Twitter follow data (nodes, edges) and applies a physical simulation to position the nodes.
+It loads Twitter follow data (nodes, edges) and applies a physical simulation to position the nodes.
 
 ## Build Instructions
 ```bash

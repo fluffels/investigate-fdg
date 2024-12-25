@@ -12,7 +12,7 @@ It simulates Twitter follow data (nodes, edges) and applies a physical simulatio
 ## Demo
 
 ### Large number of particle-particle interactions in a quad tree.
-https://github.com/user-attachments/assets/4ec1b0cb-7128-447b-9caa-fe4a14903308
+https://github.com/user-attachments/assets/191b736e-5650-457b-945f-7398cc0ff7e4
 
 ### Adding particles one-by-one.
 https://github.com/user-attachments/assets/59d8e530-3137-4d0e-91f1-8fcdfcc5cb00

@@ -17,8 +17,5 @@ https://github.com/user-attachments/assets/191b736e-5650-457b-945f-7398cc0ff7e4
 ### Adding particles one-by-one.
 https://github.com/user-attachments/assets/59d8e530-3137-4d0e-91f1-8fcdfcc5cb00
 
-### Adding many particles at once.
-https://github.com/user-attachments/assets/aec6487d-5753-4392-b576-ff5494da8a0e
-
 ### Particles with connections.
 https://github.com/user-attachments/assets/bf59cd6c-048a-4019-bdd7-99d83aaa816e
